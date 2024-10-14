@@ -18,6 +18,8 @@
 #include "targets/esp32s3-devkit-c/config.h"
 #elif defined(RG_TARGET_FRI3D_2024)
 #include "targets/fri3d-2024/config.h"
+#elif defined(RG_TARGET_ESP32S3_ZX_RAINBOW)
+#include "targets/esp32s3-zx-rainbow/config.h"
 #else
 #warning "No target defined. Defaulting to ODROID-GO."
 #include "targets/odroid-go/config.h"
