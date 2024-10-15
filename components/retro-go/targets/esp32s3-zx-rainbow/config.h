@@ -15,6 +15,8 @@
 #define RG_AUDIO_USE_INT_DAC        0   // 0 = Disable, 1 = GPIO25, 2 = GPIO26, 3 = Both
 #define RG_AUDIO_USE_EXT_DAC        0   // 0 = Disable, 1 = Enable
 
+#define RG_AUDIO_USE_BUZZER_PIN 3
+
 // Video
 #define RG_SCREEN_DRIVER            0   // 0 = ILI9341
 #define RG_SCREEN_HOST              SPI2_HOST

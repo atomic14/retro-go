@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "TouchKeyboardV2.h"
 
 #ifdef ESP_PLATFORM
 #include <driver/gpio.h>
@@ -37,8 +38,11 @@ static rg_keymap_virt_t keymap_virt[] = RG_GAMEPAD_VIRT_MAP;
 #endif
 static bool input_task_running = false;
 static uint32_t gamepad_state = -1; // _Atomic
+static uint32_t touch_keyb = 0; // _Atomic
 static uint32_t gamepad_mapped = 0;
 static rg_battery_t battery_state = {0};
+
+static TouchKeyboardV2 *touchKeyboard = NULL;
 
 #define UPDATE_GLOBAL_MAP(keymap)                 \
     for (size_t i = 0; i < RG_COUNT(keymap); ++i) \
@@ -49,12 +53,12 @@ static inline int adc_get_raw(adc_unit_t unit, adc_channel_t channel)
 {
     if (unit == ADC_UNIT_1)
     {
-        return adc1_get_raw(channel);
+        return adc1_get_raw(adc1_channel_t(channel));
     }
     else if (unit == ADC_UNIT_2)
     {
         int adc_raw_value = -1;
-        if (adc2_get_raw(channel, ADC_WIDTH_MAX - 1, &adc_raw_value) != ESP_OK)
+        if (adc2_get_raw(adc2_channel_t(channel), adc_bits_width_t(ADC_WIDTH_MAX - 1), &adc_raw_value) != ESP_OK)
             RG_LOGE("ADC2 reading failed, this can happen while wifi is active.");
         return adc_raw_value;
     }
@@ -186,7 +190,8 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
 #endif
 
     if (out)
-        *out = state;
+        *out = touch_keyb;
+        // *out = state;
     return true;
 }
 
@@ -247,16 +252,91 @@ void rg_input_init(void)
 {
     RG_ASSERT(!input_task_running, "Input already initialized!");
 
+    touchKeyboard = new TouchKeyboardV2([&](SpecKeys key, bool down)
+      {
+        {
+            rg_key_t rg_key = RG_KEY_NONE;
+            switch(key)
+            {
+                // cursor keys
+                case SPECKEY_W:
+                    rg_key = RG_KEY_UP;
+                    break;
+                case SPECKEY_S:
+                    rg_key = RG_KEY_DOWN;
+                    break;
+                case SPECKEY_A:
+                    rg_key = RG_KEY_LEFT;
+                    break;
+                case SPECKEY_D:
+                    rg_key = RG_KEY_RIGHT;
+                    break;
+                case SPECKEY_ENTER:
+                    rg_key = RG_KEY_A;
+                    break;
+                case SPECKEY_B:
+                    rg_key = RG_KEY_B;
+                    break;
+                case SPECKEY_X:
+                    rg_key = RG_KEY_X;
+                    break;
+                case SPECKEY_Y:
+                    rg_key = RG_KEY_Y;
+                    break;
+                case SPECKEY_Q:
+                    rg_key = RG_KEY_L;
+                    break;
+                case SPECKEY_E:
+                    rg_key = RG_KEY_R;
+                    break;
+                case SPECKEY_SPACE:
+                    rg_key = RG_KEY_SELECT;
+                    break;
+                case SPECKEY_0:
+                    rg_key = RG_KEY_START;
+                    break;
+                case SPECKEY_SHIFT:
+                    rg_key = RG_KEY_MENU;
+                    break;
+                case SPECKEY_O:
+                    rg_key = RG_KEY_OPTION;
+                    break;
+                default:
+                    break;
+            }
+            if (rg_key != RG_KEY_NONE)
+            {
+                RG_LOGI("Key %d pressed", rg_key);
+                if (down)
+                {
+                    touch_keyb |= rg_key;
+
+                }
+                else
+                {
+                    touch_keyb &= ~rg_key;
+                }
+            }
+        }
+      },
+      [&](SpecKeys key)
+      {
+        {
+        }
+      }
+    );
+    touchKeyboard->start();
+
 #if defined(RG_GAMEPAD_ADC_MAP)
     RG_LOGI("Initializing ADC gamepad driver...");
-    adc1_config_width(ADC_WIDTH_MAX - 1);
+    adc1_config_width(adc_bits_width_t(ADC_WIDTH_MAX - 1));
     for (size_t i = 0; i < RG_COUNT(keymap_adc); ++i)
     {
         const rg_keymap_adc_t *mapping = &keymap_adc[i];
         if (mapping->unit == ADC_UNIT_1)
-            adc1_config_channel_atten(mapping->channel, mapping->atten);
+            adc1_config_channel_atten(adc1_channel_t(mapping->channel), adc_atten_t(mapping->atten));
         else if (mapping->unit == ADC_UNIT_2)
-            adc2_config_channel_atten(mapping->channel, mapping->atten);
+            adc2_config_channel_atten(adc2_channel_t(mapping->channel), adc_atten_t(mapping->atten));
         else
             RG_LOGE("Invalid ADC unit %d!", (int)mapping->unit);
     }
@@ -268,8 +348,8 @@ void rg_input_init(void)
     for (size_t i = 0; i < RG_COUNT(keymap_gpio); ++i)
     {
         const rg_keymap_gpio_t *mapping = &keymap_gpio[i];
-        gpio_set_direction(mapping->num, GPIO_MODE_INPUT);
-        gpio_set_pull_mode(mapping->num, mapping->pull);
+        gpio_set_direction(gpio_num_t(mapping->num), GPIO_MODE_INPUT);
+        gpio_set_pull_mode(gpio_num_t(mapping->num), gpio_pull_mode_t(mapping->pull));
     }
     UPDATE_GLOBAL_MAP(keymap_gpio);
 #endif
@@ -305,12 +385,12 @@ void rg_input_init(void)
     {
         adc1_config_width(ADC_WIDTH_MAX - 1); // there is no adc2_config_width
         adc1_config_channel_atten(RG_BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_11);
-        esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_MAX - 1, 1100, &adc_chars);
+        esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, adc_bits_width_t(ADC_WIDTH_MAX - 1), 1100, &adc_chars);
     }
     else if (RG_BATTERY_ADC_UNIT == ADC_UNIT_2)
     {
         adc2_config_channel_atten(RG_BATTERY_ADC_CHANNEL, ADC_ATTEN_DB_11);
-        esp_adc_cal_characterize(ADC_UNIT_2, ADC_ATTEN_DB_11, ADC_WIDTH_MAX - 1, 1100, &adc_chars);
+        esp_adc_cal_characterize(ADC_UNIT_2, ADC_ATTEN_DB_11, adc_bits_width_t(ADC_WIDTH_MAX - 1), 1100, &adc_chars);
     }
     else
     {

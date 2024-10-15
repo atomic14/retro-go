@@ -54,8 +54,8 @@ Note that there are some restrictions on how high the PWM frequency can be, and 
 #define SOURCE_CLOCK_FREQUENCY        80000000
 #define SOURCE_CLOCK_MAX_FREQUENCY    SOURCE_CLOCK_FREQUENCY/SOURCE_CLOCK_MIN_DIVIDER
 #define LEDC_PWM_SPEED_MODE           LEDC_LOW_SPEED_MODE
-#define LEDC_PWM_CHANNEL              LEDC_CHANNEL_0
-#define LEDC_PWM_TIMER                LEDC_TIMER_0
+#define LEDC_PWM_CHANNEL              LEDC_CHANNEL_1
+#define LEDC_PWM_TIMER                LEDC_TIMER_1
 #define GENERAL_PURPOSE_TIMER_GROUP   TIMER_GROUP_0
 #define GENERAL_PURPOSE_TIMER         TIMER_0
 
@@ -196,16 +196,23 @@ static bool buzzer_init(int device, int sampleRate)
 
     // Choose highest possible PWM duty resolution (that still fits the sampleRate) to increase fidelity of the PWM duty cycle
     int pwm_resolution = 8; // default to worst case if no match is found below
-    if (freq < ESP_MAX_PWM_FREQ_13_BIT)
-        pwm_resolution = 13;
-    else if (freq < ESP_MAX_PWM_FREQ_12_BIT)
+    int chosenFreq = ESP_MAX_PWM_FREQ_8_BIT;
+    if (freq < ESP_MAX_PWM_FREQ_13_BIT) {
         pwm_resolution = 12;
-    else if (freq < ESP_MAX_PWM_FREQ_11_BIT)
+        chosenFreq = ESP_MAX_PWM_FREQ_12_BIT;
+    } else if (freq < ESP_MAX_PWM_FREQ_12_BIT) {
         pwm_resolution = 11;
-    else if (freq < ESP_MAX_PWM_FREQ_10_BIT)
+        chosenFreq = ESP_MAX_PWM_FREQ_11_BIT;
+    } else if (freq < ESP_MAX_PWM_FREQ_11_BIT) {
         pwm_resolution = 10;
-    else if (freq < ESP_MAX_PWM_FREQ_9_BIT)
+        chosenFreq = ESP_MAX_PWM_FREQ_10_BIT;
+    } else if (freq < ESP_MAX_PWM_FREQ_10_BIT) {
         pwm_resolution = 9;
+        chosenFreq = ESP_MAX_PWM_FREQ_9_BIT;
+    } else if (freq < ESP_MAX_PWM_FREQ_9_BIT) {
+        pwm_resolution = 8;
+        chosenFreq = ESP_MAX_PWM_FREQ_8_BIT;
+    }
 
     // Higher PWM resolution means fewer bits need to be clipped off of the duty cycle
     int clipbits = 16 - pwm_resolution;
@@ -214,7 +221,7 @@ static bool buzzer_init(int device, int sampleRate)
 
     ledc_timer_config_t ledc_timer = {
         .duty_resolution = pwm_resolution,
-        .freq_hz = NOTE_A,
+        .freq_hz = chosenFreq,
         .speed_mode = LEDC_PWM_SPEED_MODE,
         .timer_num = LEDC_PWM_TIMER,
         .clk_cfg = LEDC_USE_APB_CLK,
@@ -228,7 +235,8 @@ static bool buzzer_init(int device, int sampleRate)
         .gpio_num   = RG_AUDIO_USE_BUZZER_PIN,
         .speed_mode = LEDC_PWM_SPEED_MODE,
         .hpoint     = 0,
-        .timer_sel  = LEDC_PWM_TIMER
+        .timer_sel  = LEDC_PWM_TIMER,
+        .intr_type  = LEDC_INTR_DISABLE,
     };
     result = ledc_channel_config(&ledc_channel);
     RG_LOGI("ledc_channel_config returns: %d", result);
@@ -247,9 +255,6 @@ static bool buzzer_init(int device, int sampleRate)
     // Turn off sound
     ledc_set_duty(LEDC_PWM_SPEED_MODE, LEDC_PWM_CHANNEL, 0);
     ledc_update_duty(LEDC_PWM_SPEED_MODE, LEDC_PWM_CHANNEL);
-
-    ledc_timer.freq_hz = freq;
-    ledc_timer_config(&ledc_timer);
 
     RG_LOGD("creating timer with interrupt handler for buzzer");
 

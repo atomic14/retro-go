@@ -97,6 +97,8 @@ static const struct {int mask; int *key;} keymap[] = {
     {RG_KEY_OPTION, &key_map},
     {RG_KEY_START, &key_use},
     {RG_KEY_SELECT, &key_weapontoggle},
+    {RG_KEY_L, &key_strafeleft},
+    {RG_KEY_R, &key_straferight},
 };
 
 static const char *SETTING_GAMMA = "Gamma";
